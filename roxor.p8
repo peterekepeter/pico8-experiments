@@ -99,6 +99,9 @@ function update_game()
 	if game_intro then
 		t+=1;
  	if(btnp(4) or btnp(5)) then
+ 	 -- auto win
+	 	lvls_clear[selected_level]=true;	
+	 	serialize();
  		game_intro=false;
  		t=0;
  	end
