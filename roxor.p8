@@ -10,13 +10,17 @@ function init_game()
  t=0;
 end
 
-function reset_b0ard(w,h,tile)
-
+function reset_b0ard(w,h,tile,sand)
+	
+	game_intro = level_intro;
+	selected_level=selected;
+	game_win = false;
+	game_sandbox = sand;
 	leveltile = tile;
 	wsx=flr((16-w)/2);
 	wsy=flr((16-h)/2);
-	wex=wsx+w;
-	wey=wsy+h;
+	wex=wsx+w-1;
+	wey=wsy+h-1;
 	
  x=flr((wsx+wex)/2);
  y=flr((wsy+wey)/2);
@@ -35,6 +39,24 @@ function reset_b0ard(w,h,tile)
  		mset(i,j,0);
  	end
  end
+ 
+ for i=1,#level_s,2 do
+ 	local x,y=level_s[i],level_s[i+1];
+ 	if x!=nil and y != nil then
+	 	splats(wsx+x,wsy+y);
+	 	if level_m==true then
+	 		splats(wex-x,wsy+y);
+	 		splats(wsx+x,wey-y);
+	 		splats(wex-x,wey-y);
+	 	end
+ 	end
+ end
+ 
+ for i=1,#level_q,2 do
+ 	local x,y=level_q[i], level_q[i+1];
+ 	flp(wsx+x,wsy+y);
+ end 	
+ 
 end
 
 function flp(x,y)
@@ -63,7 +85,36 @@ function splat(x,y)
 	sfx(1+splats(x,y));
 end
 
+function checkwin()
+	local win=true;
+ for i=wsx,wex,1 do
+ 	for j=wsy,wey,1 do
+ 		if (mget(i,j) != 0) win=false;
+ 	end
+ end
+ return win;
+end
+
 function update_game()
+	if game_intro then
+		t+=1;
+ 	if(btnp(4) or btnp(5)) then
+ 		game_intro=false;
+ 		t=0;
+ 	end
+		return;
+ elseif game_win then
+ 	t-=1;
+ 	did_game=false;
+ 	if (t==32) music(2);
+ 	if t<0 then
+ 		if(btnp(4) or btnp(5)) then
+ 			selected=selected_level+1;
+ 			init_menu(true);
+ 		end
+ 	end
+ 	return;
+ end
 	local s=0;
  if (btnp(0)) x-=1; gsx-=2; s=1;
  if (btnp(1)) x+=1; gsx+=2; s=1;
@@ -77,6 +128,14 @@ function update_game()
 	if (s==2) sfx(7);
  if (btnp(5)) splat(x,y);
  if (btnp(4)) init_menu();
+ if	checkwin() then
+ 	lvls_clear[selected_level]=true;	
+ 	serialize();
+		if not game_sandbox then
+ 		game_win=true;
+ 		t=64;
+ 	end
+ end
  t+=1;
  gsx=(gsx+x-gx)/1.75;
  gsy=(gsy+y-gy)/1.75;
@@ -84,49 +143,187 @@ function update_game()
  gy+=gsy/4;
 end
 
+function printm(str, y, c)
+	print(str,64-(#str)*2,y*8,c);
+end
+
 
 function draw_game()
 	cls(0);
+	if (game_intro) then
+		if (t>60*1) printm("this is it",4,6);
+		if (t>60*2) printm("the real challenge",5,6);
+		if (t>60*4) printm("is it possible",7,8);
+		if (t>60*5) printm("to flip a single cell?",8,8);
+		if (t>60*7) printm("is there a list of moves?",10,9);
+		if (t>60*8) printm("or mathematical proof?",11,9);
+		if (t>60*10) printm("press — or Ž",13,5);
+		return;
+	end
 	map()
 	--if (flr(t/16)%2==1) then
 	color(6);
 		rect(gx*8+.5,gy*8+.5,gx*8+7+.5,gy*8+7+.5);
 	--end
 	color(0);
-	if (t<32)	rectfill(0+t*2,0+t*2,128-t*2,128-t*2)
+	if (t<16)	rectfill(0+t*4,0+t*4,128-t*4,128-t*4)
+	if (t<0) then
+		print("you have cleared the level",12,48,8);
+		local str=lvls[selected_level];
+		local x=64-(#str)*2;
+		print(str,x,64,7);
+		spr(4,x-10,62);
+	end
 end
 
 function init_level()
 	init_game()
-	reset_b0ard(level_w,level_h,level_c)
+	reset_b0ard(level_w,level_h,level_c,level_sand)
+end
+
+
+lvls = { 
+	'easy peasy',
+	'getting started',
+	'still quite easy',
+	'interesting',
+	'hmmm',
+	'complicated',
+	'what?????',
+	'neutron star',
+	'wormholes', 
+	'is it possible?', 
+	'random easy 6', 
+	'random easy 8', 
+	'random easy 12', 
+	'random easy 16', 
+	'random hard 6', 
+	'random hard 8', 
+	'random hard 12', 
+	'random hard 16', 
+	'sandbox 6',
+	'sandbox 8',
+	'sandbox 12', 
+	'sandbox 16', 
+}
+
+function rndgen(t,x,y,w,h)
+	local i,j;
+	for i=x,w-1,1 do
+		for j=y,h-1,1 do
+			if rnd(1)<0.5 then
+				add(t,i);
+				add(t,j);
+			end
+		end
+	end
 end
 
 function onselect(level)
 
-	local p=false;
-	local w,h,c=7,7,16;
-	if level==2 then
-		c=17;	p=true; w=5;h=5;
+	serialize();
+
+	local p,s,r=false,{},false;
+	local w,h,c=8,8,16;
+	local sand,m=false,false;
+	local q={};
+	local intro = false;
+	
+	-- levels
+	if level==1 then
+		w=6; h=6; p=true;
+		s={1,1,4,4};
+	elseif level==2 then
+		w=8; h=8; p=true; c=17;
+		s={2,2,3,3,2,4};
 	elseif level==3 then
-		c=18; p=true; w=7;h=7;
+		w=8; h=8; p=true; c=17;
+		s={5,6,3,2,1,4,5,3,4,5};
 	elseif level==4 then
-	 c=19; p=true; w=9;h=9;
+		w=8; h=8; p=true; c=18; 
+		m=true;
+		s={5,6,3,2,1,4,5,3,4,5};	
 	elseif level==5 then
-	 c=16; p=true; w=11;h=11;
+		w=6; h=6; p=true; c=16; 
+		m=true;
+		s={0,3,2,2,1,2};
+	elseif level==6 then
+		w=14; h=14; p=true; c=19; 
+		m=true;
+		s={2,2,4,2,2,3,2,4,3,5,6,2,3,4};
+	elseif level==7 then
+		w=6; h=6; p=true; c=20; 
+		m=true;
+		s={1,0,0,1,2,2,0,0};
+	elseif level==8 then
+		w=8; h=8; p=true; c=21; 
+		q={6,0,4,1,7,2,5,3};
+	elseif level==9 then
+		w=8; h=8; p=true; c=22; 
+		q={2,2,6,5};
+	elseif level==10 then
+		w=8; h=8; p=true; c=23; 
+		q={1,2};
+		intro = true;
+	end
+	
+	-- random
+	level-=10;
+	if level==1 then
+		c=18; p=true; w=6;h=6;
+		rndgen(s,2,2,w-2,h-2);
+	elseif level==2 then
+	 c=19; p=true; w=8;h=8;
+		rndgen(s,2,2,w-2,h-2);
+	elseif level==3 then
+	 c=19; p=true; w=12;h=12;
+		rndgen(s,2,2,w-2,h-2);
+	elseif level==4 then
+	 c=16; p=true; w=16;h=16;
+		rndgen(s,2,2,w-2,h-2);
+	elseif level==5 then
+		c=18; p=true; w=6;h=6;
+		rndgen(s,0,0,w,h);
+	elseif level==6 then
+	 c=19; p=true; w=8;h=8;
+		rndgen(s,0,0,w,h);
+	elseif level==7 then
+	 c=19; p=true; w=12;h=12;
+		rndgen(s,0,0,w,h);
+	elseif level==8 then
+	 c=16; p=true; w=16;h=16;
+		rndgen(s,0,0,w,h);
+	end
+	
+	-- sandbox
+	level-=8;
+	if level==1 then
+		c=18; p=true; w=6;h=6; sand=true;
+	elseif level==2 then
+	 c=19; p=true; w=8;h=8; sand=true;
+	elseif level==3 then
+	 c=19; p=true; w=12;h=12; sand=true;
+	elseif level==4 then
+	 c=16; p=true; w=16;h=16; sand=true;
 	end
 	if p then
 		level_w=w;
 		level_h=h;
 		level_c=c;
+		level_s=s;
+		level_q=q;
+		level_intro = intro;
 		panout=true; 
+		level_sand = sand;
+		level_m = m;
 		panout_x=128;
 		pst=t
 		music(-1);
 	end
 end
 
-function init_menu()
-	music(0);
+function init_menu(nomus)
+	if (nomus!=true)	music(0);
 	t=0;
 	pst=0;
 	panout=false;
@@ -238,7 +435,9 @@ function draw_menu()
 	 local y=i;
 	 if (v==nil) break;
 	 color(6);
-	 spr(3,x+6,9*y-1)
+		local sprind=3;
+		if (lvls_clear[i]) sprind=4;
+	 spr(sprind,x+6,9*y-1)
 	 color(2);
  	print(v,16+x,9*y+1)
  	color(6);
@@ -262,22 +461,41 @@ function _draw()
  else
 		draw_menu();
  end
+ camera(0,0);
+ -- if (level_s!=nil) print(#level_s,0,0,7);
 end
  
+function serialize()
+	dset(0, selected);
+	local i,dat;
+	for i=0,#lvls,1 do
+		dat=0;
+		if (lvls_clear[i]==true) dat=1;
+		dset(i,dat);		
+	end
+end
+
+function deserialize()
+ local i,dat =0, dget(0);
+ if (dat>#lvls)dat=#lvls;
+ if (dat>0) selected = dat;
+ for i=0,#lvls,1 do
+ 	dat = dget(i);
+ 	if (dat == 1) lvls_clear[i]=true;
+ end 
+end
  
 function boot()
-	lvls = { 
-		'easy peasy',
-		'level 0',
-		'level 0',
-		'sandbox 5', 
-		'sandbox 7',
-		'sandbox 9', 
-		'sandbox 11', 
-	}
+	cartdata("ep_m_roxor_v1")
+	lvls_clear = {}
+	local i;
+	for i=0,#lvls,1 do
+		lvls_clear[i]=false;
+	end
 	t=0;
 	selected=1;
 	did_game=false;
+	deserialize();
 	init_menu();
 end
 
@@ -291,14 +509,14 @@ __gfx__
 00700700b33333350110011000088000003330000000777777777777777700000000000077700000000000000000077700000000770000777777777700000000
 00000000b33333351100110000000000000300000000777777777777777700000000000077770000000000000000777700000000700000070777777000000000
 00000000055555501001100100000000000000000000777777777777777700000000000077770000000000000000777700000000000000000077770000000000
-0bbbbbb0077777700aaaaaa008888880099999900777777000000000000000000000000000000000000000000000000000000000000000000000000000000000
-b33333357dddddd5a999999582222225944444457666666500000000000000000000000000000000000000000000000000000000000000000000000000000000
-b33333357dddddd5a999999582222225944444457666666500000000000000000000000000000000000000000000000000000000000000000000000000000000
-b33333357dddddd5a999999582222225944444457666666500000000000000000000000000000000000000000000000000000000000000000000000000000000
-b33333357dddddd5a999999582222225944444457666666500000000000000000000000000000000000000000000000000000000000000000000000000000000
-b33333357dddddd5a999999582222225944444457666666500000000000000000000000000000000000000000000000000000000000000000000000000000000
-b33333357dddddd5a999999582222225944444457666666500000000000000000000000000000000000000000000000000000000000000000000000000000000
-05555550055555500555555005555550055555500555555000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0bbbbbb0077777700aaaaaa0088888800999999007777770077777700eeeeee00000000000000000000000000000000000000000000000000000000000000000
+b33333357dddddd5a99999958222222194444441766666617cccccc5e22222210000000000000000000000000000000000000000000000000000000000000000
+b33333357dddddd5a99999958282221194944441766666617cccccc5e22222210000000000000000000000000000000000000000000000000000000000000000
+b33333357dddddd5a99999958822282194449941766666617cccccc5e22222210000000000000000000000000000000000000000000000000000000000000000
+b33333357dddddd5a99999958222222194449941766666617cccccc5e22222210000000000000000000000000000000000000000000000000000000000000000
+b33333357dddddd5a99999958221822194944441766666617cccccc5e22222210000000000000000000000000000000000000000000000000000000000000000
+b33333357dddddd5a99999958212222194444441766666617cccccc5e22222210000000000000000000000000000000000000000000000000000000000000000
+05555550055555500555555001111110011111100111111005555550011111100000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
